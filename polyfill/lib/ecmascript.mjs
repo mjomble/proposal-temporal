@@ -16,6 +16,7 @@ const MathSign = Math.sign;
 const MathTrunc = Math.trunc;
 const NumberIsFinite = Number.isFinite;
 const NumberIsNaN = Number.isNaN;
+const NumberIsSafeInteger = Number.isSafeInteger;
 const NumberMaxSafeInteger = Number.MAX_SAFE_INTEGER;
 const ObjectCreate = Object.create;
 const ObjectDefineProperty = Object.defineProperty;
@@ -3294,11 +3295,10 @@ export function NanosecondsToDays(nanoseconds, zonedRelativeTo, timeZoneRec, pre
   // back inside the period where it belongs. Note that this case only can
   // happen for positive durations because the only direction that
   // `disambiguation: 'compatible'` can change clock time is forwards.
-  days = bigInt(days);
   if (sign === 1) {
-    while (days.greater(0) && relativeResult.epochNs.greater(endNs)) {
-      days = days.prev();
-      relativeResult = AddDaysToZonedDateTime(start, dtStart, timeZoneRec, calendar, days.toJSNumber());
+    while (days > 0 && relativeResult.epochNs.greater(endNs)) {
+      days--;
+      relativeResult = AddDaysToZonedDateTime(start, dtStart, timeZoneRec, calendar, days);
       // may do disambiguation
     }
   }
@@ -3321,10 +3321,10 @@ export function NanosecondsToDays(nanoseconds, zonedRelativeTo, timeZoneRec, pre
     if (isOverflow) {
       nanoseconds = nanoseconds.subtract(dayLengthNs);
       relativeResult = oneDayFarther;
-      days = days.add(sign);
+      days += sign;
     }
   } while (isOverflow);
-  if (!days.isZero() && MathSign(days.toJSNumber()) != sign) {
+  if (days !== 0 && MathSign(days) != sign) {
     throw new RangeError('Time zone or calendar converted nanoseconds into a number of days with the opposite sign');
   }
   if (!nanoseconds.isZero() && MathSign(nanoseconds.toJSNumber()) != sign) {
@@ -3336,37 +3336,10 @@ export function NanosecondsToDays(nanoseconds, zonedRelativeTo, timeZoneRec, pre
   if (nanoseconds.abs().geq(MathAbs(dayLengthNs))) {
     throw new Error('assert not reached');
   }
-  return { days: days.toJSNumber(), nanoseconds, dayLengthNs: MathAbs(dayLengthNs) };
+  return { days, nanoseconds, dayLengthNs: MathAbs(dayLengthNs) };
 }
 
 export function BalanceTimeDuration(
-  days,
-  hours,
-  minutes,
-  seconds,
-  milliseconds,
-  microseconds,
-  nanoseconds,
-  largestUnit
-) {
-  let result = BalancePossiblyInfiniteTimeDuration(
-    days,
-    hours,
-    minutes,
-    seconds,
-    milliseconds,
-    microseconds,
-    nanoseconds,
-    largestUnit
-  );
-  if (result === 'positive overflow' || result === 'negative overflow') {
-    throw new RangeError('Duration out of range');
-  } else {
-    return result;
-  }
-}
-
-export function BalancePossiblyInfiniteTimeDuration(
   days,
   hours,
   minutes,
@@ -3434,57 +3407,11 @@ export function BalancePossiblyInfiniteTimeDuration(
   microseconds = microseconds.toJSNumber() * sign;
   nanoseconds = nanoseconds.toJSNumber() * sign;
 
-  if (
-    !NumberIsFinite(days) ||
-    !NumberIsFinite(hours) ||
-    !NumberIsFinite(minutes) ||
-    !NumberIsFinite(seconds) ||
-    !NumberIsFinite(milliseconds) ||
-    !NumberIsFinite(microseconds) ||
-    !NumberIsFinite(nanoseconds)
-  ) {
-    if (sign === 1) {
-      return 'positive overflow';
-    } else if (sign === -1) {
-      return 'negative overflow';
-    }
-  }
+  RejectDuration(0, 0, 0, days, hours, minutes, seconds, milliseconds, microseconds, nanoseconds);
   return { days, hours, minutes, seconds, milliseconds, microseconds, nanoseconds };
 }
 
 export function BalanceTimeDurationRelative(
-  days,
-  hours,
-  minutes,
-  seconds,
-  milliseconds,
-  microseconds,
-  nanoseconds,
-  largestUnit,
-  zonedRelativeTo,
-  timeZoneRec,
-  precalculatedPlainDateTime
-) {
-  let result = BalancePossiblyInfiniteTimeDurationRelative(
-    days,
-    hours,
-    minutes,
-    seconds,
-    milliseconds,
-    microseconds,
-    nanoseconds,
-    largestUnit,
-    zonedRelativeTo,
-    timeZoneRec,
-    precalculatedPlainDateTime
-  );
-  if (result === 'positive overflow' || result === 'negative overflow') {
-    throw new RangeError('Duration out of range');
-  }
-  return result;
-}
-
-export function BalancePossiblyInfiniteTimeDurationRelative(
   days,
   hours,
   minutes,
@@ -3526,11 +3453,17 @@ export function BalancePossiblyInfiniteTimeDurationRelative(
     days = 0;
   }
 
-  const result = BalancePossiblyInfiniteTimeDuration(0, 0, 0, 0, 0, 0, nanoseconds, largestUnit);
-  if (result === 'positive overflow' || result === 'negative overflow') {
-    return result;
-  }
-  ({ hours, minutes, seconds, milliseconds, microseconds, nanoseconds } = result);
+  ({ hours, minutes, seconds, milliseconds, microseconds, nanoseconds } = BalanceTimeDuration(
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    nanoseconds,
+    largestUnit
+  ));
+
   return { days, hours, minutes, seconds, milliseconds, microseconds, nanoseconds };
 }
 
@@ -3760,6 +3693,9 @@ export function RejectDuration(y, mon, w, d, h, min, s, ms, µs, ns) {
     if (!NumberIsFinite(prop)) throw new RangeError('infinite values not allowed as duration fields');
     const propSign = MathSign(prop);
     if (propSign !== 0 && propSign !== sign) throw new RangeError('mixed-sign values not allowed as duration fields');
+  }
+  if (!NumberIsSafeInteger(d * 86400 + h * 3600 + min * 60 + s + MathTrunc(ms / 1e3 + µs / 1e6 + ns / 1e9))) {
+    throw new RangeError('total of duration time units cannot exceed 9007199254740991.999999999 s');
   }
 }
 
@@ -5867,6 +5803,7 @@ export function RoundDuration(
       break;
     }
   }
+  RejectDuration(years, months, weeks, days, hours, minutes, seconds, milliseconds, microseconds, nanoseconds);
   return { years, months, weeks, days, hours, minutes, seconds, milliseconds, microseconds, nanoseconds, total };
 }
 
