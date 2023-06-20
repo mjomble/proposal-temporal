@@ -222,7 +222,30 @@ assert.equal(monday.hoursInDay, 24);
 const friday = monday.add({ days: 4 });
 assert.equal(friday.hoursInDay, 72);
 
-// Adding 1 day to Friday gets you the next Monday
+// Adding 1 day to Friday gets you the next Monday (disambiguates forward)
 assert.equal(friday.add({ days: 1 }).toString(), '2022-08-29T09:30:00-04:00[NYSE]');
 // Adding 3 days to Friday also gets you the next Monday
 assert.equal(friday.add({ days: 3 }).toString(), '2022-08-29T09:30:00-04:00[NYSE]');
+
+const nextMonday = monday.add({ weeks: 1 });
+
+// Subtracting 1 day from Monday gets you the same day (disambiguates forward)
+assert.equal(nextMonday.subtract({ days: 1 }).toString(), '2022-08-29T09:30:00-04:00[NYSE]');
+// Subtracting 3 days from Monday gets you the previous Friday
+assert.equal(nextMonday.subtract({ days: 3 }).toString(), '2022-08-26T09:30:00-04:00[NYSE]');
+
+// Difference between Friday and Monday is 72 hours or 3 days
+const fridayUntilMonday = friday.until(nextMonday);
+assert.equal(fridayUntilMonday.toString(), 'PT72H');
+assert.equal(fridayUntilMonday.total('hours'), 72);
+assert.equal(fridayUntilMonday.total('days'), 3);
+
+const mondaySinceFriday = nextMonday.since(friday);
+assert.equal(mondaySinceFriday.toString(), 'PT72H');
+assert.equal(mondaySinceFriday.total('hours'), 72);
+assert.equal(mondaySinceFriday.total('days'), 3);
+
+// One week is still 7 days
+const oneWeek = Temporal.Duration.from({ weeks: 1 });
+assert.equal(oneWeek.total({ unit: 'days', relativeTo: monday }), 7);
+assert.equal(oneWeek.total({ unit: 'days', relativeTo: friday }), 7);

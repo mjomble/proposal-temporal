@@ -3255,20 +3255,34 @@ export function NormalizedTimeDurationToDays(norm, zonedRelativeTo, timeZoneRec,
   // back inside the period where it belongs. Note that this case only can
   // happen for positive durations because the only direction that
   // `disambiguation: 'compatible'` can change clock time is forwards.
-  if (sign === 1) {
-    while (days > 0 && relativeResult.epochNs.greater(endNs)) {
-      days--;
-      relativeResult = AddDaysToZonedDateTime(start, dtStart, timeZoneRec, calendar, days);
-      // may do disambiguation
+  if (sign === 1 && days > 0 && relativeResult.epochNs.greater(endNs)) {
+    days--;
+    relativeResult = AddDaysToZonedDateTime(start, dtStart, timeZoneRec, calendar, days);
+    // may do disambiguation
+    if (days > 0 && relativeResult.epochNs.greater(endNs)) {
+      throw new RangeError('inconsistent result from custom time zone getInstantFor()');
     }
   }
   norm = TimeDuration.fromEpochNsDiff(endNs, relativeResult.epochNs);
 
-  let isOverflow = false;
-  let dayLengthNs;
-  do {
-    // calculate length of the next day (day that contains the time remainder)
-    const oneDayFarther = AddDaysToZonedDateTime(
+  // calculate length of the next day (day that contains the time remainder)
+  let oneDayFarther = AddDaysToZonedDateTime(
+    relativeResult.instant,
+    relativeResult.dateTime,
+    timeZoneRec,
+    calendar,
+    sign
+  );
+  let dayLengthNs = TimeDuration.fromEpochNsDiff(oneDayFarther.epochNs, relativeResult.epochNs);
+  const oneDayLess = norm.subtract(dayLengthNs);
+  let isOverflow = oneDayLess.sign() * sign >= 0;
+  if (isOverflow) {
+    norm = oneDayLess;
+    relativeResult = oneDayFarther;
+    days += sign;
+
+    // ensure there was no more overflow
+    oneDayFarther = AddDaysToZonedDateTime(
       relativeResult.instant,
       relativeResult.dateTime,
       timeZoneRec,
@@ -3277,14 +3291,9 @@ export function NormalizedTimeDurationToDays(norm, zonedRelativeTo, timeZoneRec,
     );
 
     dayLengthNs = TimeDuration.fromEpochNsDiff(oneDayFarther.epochNs, relativeResult.epochNs);
-    const oneDayLess = norm.subtract(dayLengthNs);
-    isOverflow = oneDayLess.sign() * sign >= 0;
-    if (isOverflow) {
-      norm = oneDayLess;
-      relativeResult = oneDayFarther;
-      days += sign;
-    }
-  } while (isOverflow);
+    isOverflow = norm.subtract(dayLengthNs).sign() * sign >= 0;
+    if (isOverflow) throw new RangeError('inconsistent result from custom time zone getPossibleInstantsFor()');
+  }
   if (days !== 0 && MathSign(days) != sign) {
     throw new RangeError('Time zone or calendar converted nanoseconds into a number of days with the opposite sign');
   }
