@@ -68,7 +68,6 @@ export class TimeDuration {
     if (n === 0) throw new Error('division by zero');
     const { quotient, remainder } = this.totalNs.divmod(n);
     const q = quotient.toJSNumber();
-    if (!NumberIsSafeInteger(q)) throw new Error('assertion failed: quotient too big');
     const r = new TimeDuration(remainder);
     return { quotient: q, remainder: r };
   }

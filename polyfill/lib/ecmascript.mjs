@@ -59,6 +59,7 @@ import OwnPropertyKeys from 'es-abstract/helpers/OwnPropertyKeys.js';
 import some from 'es-abstract/helpers/some.js';
 
 import { GetIntrinsic } from './intrinsicclass.mjs';
+import { FMAPowerOf10, TruncatingDivModByPowerOf10 } from './math.mjs';
 import { CalendarMethodRecord, TimeZoneMethodRecord } from './methodrecord.mjs';
 import { TimeDuration } from './timeduration.mjs';
 import {
@@ -3366,17 +3367,17 @@ export function BalanceTimeDuration(norm, largestUnit) {
     case 'millisecond':
       microseconds = MathTrunc(nanoseconds / 1000);
       nanoseconds %= 1000;
-      milliseconds = MathTrunc(microseconds / 1000) + seconds * 1000;
+      milliseconds = FMAPowerOf10(seconds, 3, MathTrunc(microseconds / 1000));
       microseconds %= 1000;
       seconds = 0;
       break;
     case 'microsecond':
-      microseconds = MathTrunc(nanoseconds / 1000) + seconds * 1e6;
+      microseconds = FMAPowerOf10(seconds, 6, MathTrunc(nanoseconds / 1000));
       nanoseconds %= 1000;
       seconds = 0;
       break;
     case 'nanosecond':
-      nanoseconds += seconds * 1e9;
+      nanoseconds = FMAPowerOf10(seconds, 9, nanoseconds);
       seconds = 0;
       break;
     default:
@@ -3666,7 +3667,12 @@ export function RejectDuration(y, mon, w, d, h, min, s, ms, µs, ns) {
   if (MathAbs(y) >= 2 ** 32 || MathAbs(mon) >= 2 ** 32 || MathAbs(w) >= 2 ** 32) {
     throw new RangeError('years, months, and weeks must be < 2³²');
   }
-  if (!NumberIsSafeInteger(d * 86400 + h * 3600 + min * 60 + s + MathTrunc(ms / 1e3 + µs / 1e6 + ns / 1e9))) {
+  const msResult = TruncatingDivModByPowerOf10(ms, 3);
+  const µsResult = TruncatingDivModByPowerOf10(µs, 6);
+  const nsResult = TruncatingDivModByPowerOf10(ns, 9);
+  const remainderSec = TruncatingDivModByPowerOf10(msResult.mod * 1e6 + µsResult.mod * 1e3 + nsResult.mod, 9).div;
+  const totalSec = d * 86400 + h * 3600 + min * 60 + s + msResult.div + µsResult.div + nsResult.div + remainderSec;
+  if (!NumberIsSafeInteger(totalSec)) {
     throw new RangeError('total of duration time units cannot exceed 9007199254740991.999999999 s');
   }
 }

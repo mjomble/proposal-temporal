@@ -17,6 +17,9 @@ import './ecmascript.mjs';
 // Internal 96-bit integer implementation, not suitable for test262
 import './timeduration.mjs';
 
+// Power-of-10 math
+import './math.mjs';
+
 Promise.resolve()
   .then(() => {
     return Demitasse.report(Pretty.reporter);
